@@ -1,15 +1,9 @@
 <script lang="ts">
-	import type { Writable } from "svelte/store";
     import { randomId } from '$lib/helpers'
-	import type { ItemType, ItemValues, ItemsStore } from "./types";
+	import type { ItemType, ItemValues } from "./types";
 	import { onDestroy } from "svelte";
 
-    export let startingValues: ItemValues | null = null // { x: randomXPosition(), y: randomYPosition(), direction: randomDirection(), value: randomValue(), speed: 2, radius: 20 }
-    export let items: Writable<ItemsStore>
     export let container: HTMLDivElement
-
-    const positionMargin = 32
-
     const {width, height} = container.getBoundingClientRect()
     const randomXPosition = () => Math.random() * (width - positionMargin) + positionMargin
     const randomYPosition = () => Math.random() * (height - positionMargin) + positionMargin
@@ -22,22 +16,23 @@
     }
     const randomSpeed = () => Math.random() * 4 + 1
 
-    if (!startingValues) startingValues = { x: randomXPosition(), y: randomYPosition(), direction: randomDirection(), value: randomValue(), speed: randomSpeed(), radius: 10 }
+    export let values: ItemValues = {id: randomId(), x: randomXPosition(), y: randomYPosition(), direction: randomDirection(), value: randomValue(), speed: randomSpeed(), radius: 10, zoneX: 0, zoneY: 0 }
+    // export let items: ItemValues[] = []
 
-    const itemId = randomId()
-    $items[itemId] = startingValues
+    const positionMargin = 64
 
-    onDestroy(() => {
-        delete $items[itemId]
-    })
+    // items.push(values)
+    // onDestroy(() => {
+    //     items = items.filter(item => item.id !== values.id)
+    // })
 </script>
 
-<div class="flex items-center justify-center text-2xl absolute " style="transform: translate({$items[itemId].x - $items[itemId].radius}px, {$items[itemId].y - $items[itemId].radius}px); height: {$items[itemId].radius * 2}px; width: {$items[itemId].radius * 2}px;">
-    {#if $items[itemId].value === 'rock'}
+<div class="flex items-center justify-center text-2xl absolute " style="transform: translate({values.x - values.radius}px, {values.y - values.radius}px); height: {values.radius * 2}px; width: {values.radius * 2}px;">
+    {#if values.value === 'rock'}
         🥌
-    {:else if $items[itemId].value === 'paper'}
+    {:else if values.value === 'paper'}
         📄
-    {:else if $items[itemId].value === 'scissors'}
+    {:else if values.value === 'scissors'}
         ✂️
     {/if}
 </div>
