@@ -27,7 +27,7 @@
 	refreshZones();
 	let width: number, height: number;
 
-	const itemCount = 600;
+	const itemCount = 450;
 
 	type TargetEnemies = {
 		[key: string]: ItemValues
@@ -102,6 +102,7 @@
 	}
 
 	const setHomingDirection = (item: ItemValues) => {
+		if (hasWon) return
 		const targetEnemyType = getEnemyType(item.value)
 
 		if (currentTargets[item.id]) {
@@ -199,16 +200,23 @@
 	}
 	
 	let frametime = 0
+	let frametimes: number[] = []
 
 	let countdownInterval: number
+	let frametimeSorterInterval: number
 	onMount(async () => {
 		// const interval = setInterval(run, 1000 / 60)
-		const countdownInterval = setInterval(runCountdown, 1000)
+		countdownInterval = setInterval(runCountdown, 1000)
+		frametimeSorterInterval = setInterval(() => {
+			frametimes.sort((a, b) => a - b)
+			frametimes = frametimes
+		}, 1000)
 		while (true) {
 			const now = performance.now()
 			run()
 			frametime = performance.now() - now
-			const timeToWait = 1000 / 60 - frametime
+			frametimes.push(frametime)
+			const timeToWait = 1000 / 144 - frametime
 			await new Promise(resolve => setTimeout(resolve, timeToWait > 0 ? timeToWait : 0.1))
 		}
 		
@@ -216,6 +224,7 @@
 		
 	})
 	onDestroy(() => clearInterval(countdownInterval))
+	onDestroy(() => clearInterval(frametimeSorterInterval))
 
 	let scissorsCount = 0
 	let rockCount = 0
@@ -225,11 +234,17 @@
 	let countdown = 5
 
 	$: hasWon = scissorsCount === itemCount || rockCount === itemCount || paperCount === itemCount
-
+	
+	$: hasWon, resetCountdown()
 	let restartGame = false
-
 	$: restartGame, items = []
 
+	const resetCountdown = () => {
+		if (!hasWon) {
+			countdown = 5
+		}
+	}
+	
 </script>
 
 
@@ -263,8 +278,13 @@
 	🔄
 </button>
 
-<span class="absolute w-36 top-4 left-4 text-4xl py-2 px-4 variant-glass-primary rounded-md" >
-	ms: {Math.round(frametime)}
+<span class="absolute top-4 left-4 text-4xl py-2 px-4 variant-glass-primary rounded-md" >
+	ms: {Math.round(frametime)} <br>
+	frames: {frametimes.length || 0} <br>
+	avg: {Math.round(frametimes.reduce((a, b) => a + b, 0) / frametimes.length) || 0} <br>
+	worst: {Math.round(frametimes[frametimes.length - 1]) || 0} <br>
+	1%: {Math.round(frametimes.slice(frametimes.length - Math.round(frametimes.length * 0.01)).reduce((a, b) => a + b, 0) / Math.round(frametimes.length * 0.01)) || 0} <br>
+	0.1%: {Math.round(frametimes.slice(frametimes.length - Math.round(frametimes.length * 0.001)).reduce((a, b) => a + b, 0) / Math.round(frametimes.length * 0.001)) || 0} 
 </span>
 
 {#if hasWon}

@@ -14,7 +14,7 @@
         if (random < 0.66) return 'paper'
         return 'scissors'
     }
-    const randomSpeed = () => Math.random() * 4 + 1
+    const randomSpeed = () => Math.random() * 5 + 1
 
     export let values: ItemValues = {id: randomId(), x: randomXPosition(), y: randomYPosition(), direction: randomDirection(), value: randomValue(), speed: randomSpeed(), radius: 10, zoneX: 0, zoneY: 0 }
     // export let items: ItemValues[] = []
