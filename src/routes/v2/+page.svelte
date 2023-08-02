@@ -88,6 +88,12 @@
 
 	$: loaded = imagesLoaded === 3;
 
+	let scale = 1;
+	let translateX = 0;
+	let translateY = 0;
+
+	let gameSpeed = 1;
+	$: gameSpeed = 1 / scale;
 	class Game {
 		ctx: CanvasRenderingContext2D;
 		grid: Grid;
@@ -105,8 +111,8 @@
 			this.grid = {};
 			this.entities = new Set();
 			this.config = {
-				items: 4000,
-				radius: 7,
+				items: 700,
+				radius: 15,
 				state: 'running'
 			};
 			this.currentTargets = {};
@@ -192,47 +198,47 @@
 
 			return null;
 
-			const toCheck: Vector2D[] = [entity.zone];
-			const checked: Set<string> = new Set();
+			// const toCheck: Vector2D[] = [entity.zone];
+			// const checked: Set<string> = new Set();
 
-			const maxX = Math.floor((canvas.width / this.config.radius) * 2);
-			const maxY = Math.floor((canvas.height / this.config.radius) * 2);
+			// const maxX = Math.floor((canvas.width / this.config.radius) * 2);
+			// const maxY = Math.floor((canvas.height / this.config.radius) * 2);
 
-			while (toCheck.length > 0) {
-				const current = toCheck.pop();
-				if (current === undefined) continue;
-				checked.add(Vector.toString(current));
+			// while (toCheck.length > 0) {
+			// 	const current = toCheck.pop();
+			// 	if (current === undefined) continue;
+			// 	checked.add(Vector.toString(current));
 
-				if (current.x < 0 || current.y < 0) continue;
-				if (current.x >= maxX || current.y >= maxY) continue;
+			// 	if (current.x < 0 || current.y < 0) continue;
+			// 	if (current.x >= maxX || current.y >= maxY) continue;
 
-				const entities = this.getZoneEntities(current.x, current.y);
-				for (const e of entities) {
-					if (e.value === targetType) {
-						this.currentTargets[entity.id] = e;
-						return e;
-					}
-				}
+			// 	const entities = this.getZoneEntities(current.x, current.y);
+			// 	for (const e of entities) {
+			// 		if (e.value === targetType) {
+			// 			this.currentTargets[entity.id] = e;
+			// 			return e;
+			// 		}
+			// 	}
 
-				const x1y = { x: current.x - 1, y: current.y };
-				if (!checked.has(Vector.toString(x1y))) {
-					toCheck.push(x1y);
-				}
-				const x2y = { x: current.x + 1, y: current.y };
-				if (!checked.has(Vector.toString(x2y))) {
-					toCheck.push(x2y);
-				}
-				const xy1 = { x: current.x, y: current.y - 1 };
-				if (!checked.has(Vector.toString(xy1))) {
-					toCheck.push(xy1);
-				}
-				const xy2 = { x: current.x, y: current.y + 1 };
-				if (!checked.has(Vector.toString(xy2))) {
-					toCheck.push(xy2);
-				}
-			}
+			// 	const x1y = { x: current.x - 1, y: current.y };
+			// 	if (!checked.has(Vector.toString(x1y))) {
+			// 		toCheck.push(x1y);
+			// 	}
+			// 	const x2y = { x: current.x + 1, y: current.y };
+			// 	if (!checked.has(Vector.toString(x2y))) {
+			// 		toCheck.push(x2y);
+			// 	}
+			// 	const xy1 = { x: current.x, y: current.y - 1 };
+			// 	if (!checked.has(Vector.toString(xy1))) {
+			// 		toCheck.push(xy1);
+			// 	}
+			// 	const xy2 = { x: current.x, y: current.y + 1 };
+			// 	if (!checked.has(Vector.toString(xy2))) {
+			// 		toCheck.push(xy2);
+			// 	}
+			// }
 
-			return null;
+			// return null;
 		};
 
 		getZoneEntities(zoneX: number, zoneY: number): Set<Entity> {
@@ -358,8 +364,8 @@
 		}
 
 		handleEntity(entity: Entity) {
-			entity.position.x += entity.velocity.x * entity.speed;
-			entity.position.y += entity.velocity.y * entity.speed;
+			entity.position.x += entity.velocity.x * entity.speed * gameSpeed;
+			entity.position.y += entity.velocity.y * entity.speed * gameSpeed;
 
 			this.checkWallCollision(entity);
 			this.checkEntityCollisions(entity);
@@ -424,6 +430,8 @@
 			}
 
 			this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
+			this.ctx.scale(scale, scale);
+			this.ctx.translate(translateX, translateY);
 
 			this.handleEntities();
 			const radius = this.config.radius;
@@ -452,6 +460,8 @@
 				}
 			}
 
+			this.ctx.scale(2, 2);
+
 			this.rocks = [...this.entities].filter((entity) => entity.value === 'rock');
 			this.papers = [...this.entities].filter((entity) => entity.value === 'paper');
 			this.scissors = [...this.entities].filter((entity) => entity.value === 'scissors');
@@ -462,6 +472,29 @@
 		}
 	}
 
+	// function handleZoom(event: MouseEvent) {
+	//         event.preventDefault();
+	//         var x = event.clientX - canvas.offsetLeft;
+	//         var y = event.clientY - canvas.offsetTop;
+	//         var scroll = event.deltaY < 0 ? 1 : -2;
+
+	//         var zoom = Math.exp(scroll * zoomIntensity);
+
+	//         context.translate(orgnx, orgny);
+
+	//         orgnx -= x / (scale * zoom) - x / scale;
+	//         orgny -= y / (scale * zoom) - y / scale;
+
+	//         context.scale(zoom, zoom);
+	//         context.translate(-orgnx, -orgny);
+
+	//         // Updating scale and visisble width and height
+	//         scale *= zoom;
+	//         visibleWidth = width / scale;
+	//         visibleHeight = height / scale;
+	//     }
+
+	let isMouseDown = false;
 	let game: Game;
 	onMount(() => {
 		const ctx = canvas.getContext('2d');
@@ -473,10 +506,52 @@
 		console.log(game);
 		requestAnimationFrame(() => game.run());
 	});
+
+	const handleScale = (e) => {
+		// Get the current scale before changing it
+		const prevScale = scale;
+
+		// Determine the mouse position relative to the container
+		const container = e.currentTarget;
+		const containerRect = container.getBoundingClientRect();
+		const mouseX = e.clientX - containerRect.left;
+		const mouseY = e.clientY - containerRect.top;
+
+		// Adjust the scale based on the scroll direction
+		const delta = e.deltaY;
+		if (delta < 0) {
+			scale += 0.25;
+		} else if (scale > 1) {
+			scale -= 0.25;
+		} else {
+			return;
+		}
+
+		// Adjust translateX and translateY to keep the mouse position stable during zoom
+		translateX -= mouseX * (1 / prevScale - 1 / scale);
+		translateY -= mouseY * (1 / prevScale - 1 / scale);
+	};
+
+	const handleMove = (e) => {
+		if (!isMouseDown) return;
+		const delta = {
+			x: e.movementX,
+			y: e.movementY
+		};
+		translateX += delta.x * (1 / scale);
+		translateY += delta.y * (1 / scale);
+	};
 </script>
 
 <div class="relative p-4 w-full h-full bg-surface-800 flex items-center justify-center">
-	<canvas class="w-full h-full" bind:this={canvas} />
+	<canvas
+		on:mousewheel={(e) => handleScale(e)}
+		on:mousedown={() => (isMouseDown = true)}
+		on:mouseup={() => (isMouseDown = false)}
+		on:mousemove={(e) => handleMove(e)}
+		class="w-full h-full"
+		bind:this={canvas}
+	/>
 	<button
 		on:click={() => console.log(game.entities)}
 		class="btn absolute top-0 right-0 variant-soft-primary">Entities</button
