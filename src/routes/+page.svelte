@@ -1,9 +1,7 @@
 <script lang="ts">
 	import Item from '$lib/Item.svelte';
-	import type { ItemType, ItemValues, ItemsStore } from '$lib/types';
+	import type { ItemType, ItemValues } from '$lib/types';
 	import { onDestroy, onMount } from 'svelte';
-	import { construct_svelte_component } from 'svelte/internal';
-	import { writable } from 'svelte/store';
 	import { fade } from 'svelte/transition';
 	import { cubicInOut } from 'svelte/easing';
 
@@ -12,7 +10,7 @@
 
 	const verticalZones = 32;
 	const horizonalZones = 18;
-	const itemCount = 150;
+	const itemCount = 600;
 
 	// create the zones
 	const zones: string[][][] = [];
@@ -36,18 +34,23 @@
 
 	const checkWallCollision = (item: ItemValues) => {
 		if (!container) return;
-		// const { width, height } = container.getBoundingClientRect();
-		let collided = false;
-		if (item.x + item.radius > width || item.x - item.radius < 0) {
-			item.direction = Math.PI - item.direction;
-			collided = true;
+		const { width, height } = container.getBoundingClientRect();
+		// if (item.x + item.radius > width || item.x - item.radius < 0) {
+		// 	item.direction = Math.PI - item.direction;
+		// }
+		// if (item.y + item.radius > height || item.y - item.radius < 0) {
+		// 	item.direction = -item.direction;
+		// }
+		// change collison to teleport to the other side of the map
+		if (item.x + item.radius > width) {
+			item.x = item.radius;
+		} else if (item.x - item.radius < 0) {
+			item.x = width - item.radius;
 		}
-		if (item.y + item.radius > height || item.y - item.radius < 0) {
-			item.direction = -item.direction;
-			collided = true;
-		}
-		if (collided) {
-			// item.value = getNextValue(item.value);
+		if (item.y + item.radius > height) {
+			item.y = item.radius;
+		} else if (item.y - item.radius < 0) {
+			item.y = height - item.radius;
 		}
 	};
 
@@ -82,6 +85,32 @@
 		}
 	};
 
+	const handleCollision = (item1: ItemValues, item2: ItemValues) => {
+		const angle = Math.atan2(item2.y - item1.y, item2.x - item1.x);
+		const sin = Math.sin(angle);
+		const cos = Math.cos(angle);
+
+		const item1XVel = Math.cos(item1.direction);
+		const item1YVel = Math.sin(item1.direction);
+
+		const item2XVel = Math.cos(item2.direction);
+		const item2YVel = Math.sin(item2.direction);
+
+		const vx1 = item1XVel * cos + item1YVel * sin;
+		const vy1 = item1YVel * cos - item1XVel * sin;
+
+		const vx2 = item2XVel * cos + item2YVel * sin;
+		const vy2 = item2YVel * cos - item2XVel * sin;
+
+		// swapping the x velocity (y is parallel so doesn't matter)
+		// and rotating back the adjusted perpendicular velocities
+		item1.direction = Math.atan2(vy1, vx2);
+		item2.direction = Math.atan2(vy2, vx1);
+
+		moveItem(item1);
+		moveItem(item2);
+	};
+
 	const checkItemCollisions = (item: ItemValues) => {
 		for (const otherItem of items) {
 			if (otherItem.id === item.id) continue;
@@ -92,8 +121,7 @@
 			if (dx > item.radius + otherItem.radius || dy > item.radius + otherItem.radius) continue;
 			const distance = Math.sqrt(dx * dx + dy * dy);
 			if (distance < item.radius + otherItem.radius) {
-				// $items[itemId].direction = Math.atan2(dy, dx);
-				// $items[otherItemId].direction = Math.atan2(-dy, -dx);
+				// handleCollision(item, otherItem);
 				switchValue(item, otherItem);
 			}
 		}
@@ -156,9 +184,13 @@
 	};
 
 	const moveItem = (item: ItemValues) => {
-		setHomingDirection(item);
 		item.x += Math.cos(item.direction) * item.speed;
 		item.y += Math.sin(item.direction) * item.speed;
+	};
+
+	const runItem = (item: ItemValues) => {
+		// setHomingDirection(item);
+		moveItem(item);
 		setZone(item);
 		checkWallCollision(item);
 		checkItemCollisions(item);
@@ -193,14 +225,13 @@
 		width = rect.width;
 		height = rect.height;
 		for (const item of items) {
-			moveItem(item);
+			runItem(item);
 			const index = items.indexOf(item);
 			items[index] = item;
 			// if (!hasWon) {
 			// 	changeValue(itemId)
 			// }
 		}
-
 		// do a for loop using the index so we can modify the array
 
 		calculateCounts();
@@ -235,7 +266,7 @@
 			frametime = performance.now() - now;
 			frametimes.push(frametime);
 			const timeToWait = 1000 / 60 - frametime;
-			await new Promise((resolve) => setTimeout(resolve, timeToWait > 0 ? timeToWait : 0.1));
+			await new Promise((resolve) => setTimeout(resolve, timeToWait > 0 ? timeToWait : 1));
 		}
 
 		// onDestroy(() => clearInterval(interval))

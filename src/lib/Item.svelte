@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { randomId } from '$lib/helpers';
 	import type { ItemType, ItemValues } from './types';
-	import { onDestroy } from 'svelte';
 
 	export let container: HTMLDivElement;
 	const { width, height } = container.getBoundingClientRect();
@@ -23,7 +22,7 @@
 		direction: randomDirection(),
 		value: randomValue(),
 		speed: randomSpeed(),
-		radius: 10,
+		radius: 13,
 		zoneX: 0,
 		zoneY: 0
 	};
