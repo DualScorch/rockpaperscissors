@@ -71,4 +71,8 @@ export class Vector {
     static heading(v: Vector2D): number {
         return Math.atan2(v.y, v.x);
     }
+
+    static toString(v: Vector2D): string {
+        return `${v.x},${v.y}`;
+    }
 }

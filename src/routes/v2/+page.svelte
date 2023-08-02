@@ -1,6 +1,14 @@
 <script lang="ts">
 	import { randomId } from '$lib/helpers';
-	import type { Entity, GameConfig, Grid, GridCell, ItemType } from '$lib/types';
+	import type {
+		Entity,
+		EntityType,
+		GameConfig,
+		Grid,
+		GridCell,
+		ItemType,
+		Vector2D
+	} from '$lib/types';
 	import { Vector } from '$lib/vector';
 	import { onDestroy, onMount } from 'svelte';
 
@@ -29,6 +37,17 @@
 		const num3 = ((hash >> 16) & 0xff) % 256;
 
 		return [num1, num2, num3];
+	};
+
+	const getTarget = (type: EntityType): EntityType => {
+		switch (type) {
+			case 'rock':
+				return 'scissors';
+			case 'paper':
+				return 'rock';
+			case 'scissors':
+				return 'paper';
+		}
 	};
 
 	// const getGridCells = (entity: Entity): { x: number; y: number } => {
@@ -72,24 +91,43 @@
 	class Game {
 		ctx: CanvasRenderingContext2D;
 		grid: Grid;
-		entities: Entity[];
+		entities: Set<Entity>;
 		config: GameConfig;
+		currentTargets: {
+			[key: string]: Entity | null;
+		};
+		rocks: Entity[];
+		papers: Entity[];
+		scissors: Entity[];
 
 		constructor(ctx: CanvasRenderingContext2D) {
 			this.ctx = ctx;
 			this.grid = {};
-			this.entities = [];
+			this.entities = new Set();
 			this.config = {
-				items: 800,
-				radius: 10,
+				items: 4000,
+				radius: 7,
 				state: 'running'
 			};
+			this.currentTargets = {};
 			this.setCanvasSize();
+			this.rocks = [];
+			this.papers = [];
+			this.scissors = [];
 
 			for (let i = 0; i < this.config.items; i++) {
 				const entity = this.createRandomEntity();
-				this.entities.push(entity);
+				this.entities.add(entity);
 				this.setZone(entity);
+				this.currentTargets[entity.id] = null;
+
+				if (entity.value === 'rock') {
+					this.rocks.push(entity);
+				} else if (entity.value === 'paper') {
+					this.papers.push(entity);
+				} else if (entity.value === 'scissors') {
+					this.scissors.push(entity);
+				}
 			}
 
 			loadImages();
@@ -103,41 +141,112 @@
 					y: Math.random() * canvas.height
 				},
 				velocity: Vector.random(),
-				speed: 1,
+				speed: Math.random() * 0.5 + 0.5,
 				value: getRandomType(),
-				zoneX: 0,
-				zoneY: 0
+				zone: {
+					x: 0,
+					y: 0
+				},
+				lives: 20
 			};
 		};
 
-		// getNeighbors(entity: Entity): Entity[] {
-		// 	const neighbours: Entity[] = [];
-		// 	const cells = getGridCells(entity);
-		// 	for (let x = cells.x - 1; x <= cells.x + 1; x++) {
-		// 		for (let y = cells.y - 1; y <= cells.y + 1; y++) {
-		// 			const key = `${x}-${y}`;
-		// 			if (this.grid[key]) {
-		// 				for (const neighbour of this.grid[key]) {
-		// 					if (neighbour.id === entity.id) continue;
-		// 					neighbours.push(neighbour);
-		// 				}
-		// 			}
-		// 		}
-		// 	}
-		// 	return neighbours;
-		// }
+		findNearestTarget = (entity: Entity): Entity | null => {
+			const targetType = getTarget(entity.value);
 
-		getNeighbors(entity: Entity): Entity[] {
-			const neighbours: Entity[] = [];
+			if (targetType === 'rock' && this.rocks.length === 0) return null;
+			if (targetType === 'paper' && this.papers.length === 0) return null;
+			if (targetType === 'scissors' && this.scissors.length === 0) return null;
 
-			for (let x = entity.zoneX - 2; x <= entity.zoneX + 2; x++) {
-				for (let y = entity.zoneY - 2; y <= entity.zoneY + 2; y++) {
-					if (this.grid[y] && this.grid[y][x]) {
-						for (const neighbour of this.grid[y][x]) {
-							if (neighbour.id === entity.id) continue;
-							neighbours.push(neighbour);
+			const currentTarget = this.currentTargets[entity.id];
+			if (
+				currentTarget !== null &&
+				currentTarget?.value === targetType &&
+				currentTarget.lives > 0
+			) {
+				return currentTarget;
+			}
+
+			this.currentTargets[entity.id] = null;
+
+			let closestDistance = Infinity;
+			let closestEntity: Entity | null = null;
+			for (const e of this.entities) {
+				if (e.value === targetType) {
+					const distance = Vector.dist(entity.position, e.position);
+					if (distance < closestDistance) {
+						closestDistance = distance;
+						closestEntity = e;
+
+						if (distance < 300) {
+							break;
 						}
 					}
+				}
+			}
+
+			if (closestEntity) {
+				this.currentTargets[entity.id] = closestEntity;
+				return closestEntity;
+			}
+
+			return null;
+
+			const toCheck: Vector2D[] = [entity.zone];
+			const checked: Set<string> = new Set();
+
+			const maxX = Math.floor((canvas.width / this.config.radius) * 2);
+			const maxY = Math.floor((canvas.height / this.config.radius) * 2);
+
+			while (toCheck.length > 0) {
+				const current = toCheck.pop();
+				if (current === undefined) continue;
+				checked.add(Vector.toString(current));
+
+				if (current.x < 0 || current.y < 0) continue;
+				if (current.x >= maxX || current.y >= maxY) continue;
+
+				const entities = this.getZoneEntities(current.x, current.y);
+				for (const e of entities) {
+					if (e.value === targetType) {
+						this.currentTargets[entity.id] = e;
+						return e;
+					}
+				}
+
+				const x1y = { x: current.x - 1, y: current.y };
+				if (!checked.has(Vector.toString(x1y))) {
+					toCheck.push(x1y);
+				}
+				const x2y = { x: current.x + 1, y: current.y };
+				if (!checked.has(Vector.toString(x2y))) {
+					toCheck.push(x2y);
+				}
+				const xy1 = { x: current.x, y: current.y - 1 };
+				if (!checked.has(Vector.toString(xy1))) {
+					toCheck.push(xy1);
+				}
+				const xy2 = { x: current.x, y: current.y + 1 };
+				if (!checked.has(Vector.toString(xy2))) {
+					toCheck.push(xy2);
+				}
+			}
+
+			return null;
+		};
+
+		getZoneEntities(zoneX: number, zoneY: number): Set<Entity> {
+			if (this.grid[zoneY] && this.grid[zoneY][zoneX]) {
+				return this.grid[zoneY][zoneX];
+			}
+			return new Set();
+		}
+
+		getNeighbors(zoneX: number, zoneY: number): Set<Entity>[] {
+			const neighbours: Set<Entity>[] = [];
+			for (let x = zoneX - 1; x <= zoneX + 1; x++) {
+				for (let y = zoneY - 1; y <= zoneY + 1; y++) {
+					neighbours.push(this.getZoneEntities(x, y));
 				}
 			}
 			return neighbours;
@@ -147,7 +256,7 @@
 			const yZone = Math.floor(entity.position.y / (this.config.radius * 2));
 			const xZone = Math.floor(entity.position.x / (this.config.radius * 2));
 
-			if (entity.zoneX === xZone && entity.zoneY === yZone) return;
+			if (entity.zone.x === xZone && entity.zone.y === yZone) return;
 
 			if (this.grid[yZone] && this.grid[yZone][xZone]) {
 				this.grid[yZone][xZone].delete(entity);
@@ -163,8 +272,8 @@
 
 			this.grid[yZone][xZone].add(entity);
 
-			entity.zoneX = xZone;
-			entity.zoneY = yZone;
+			entity.zone.x = xZone;
+			entity.zone.y = yZone;
 		}
 
 		checkWallCollision(entity: Entity) {
@@ -197,43 +306,53 @@
 			if (entity1Value === 'rock') {
 				if (entity2Value === 'paper') {
 					entity1.value = 'paper';
+					entity1.lives--;
 				} else if (entity2Value === 'scissors') {
 					entity2.value = 'rock';
+					entity2.lives--;
 				}
 			} else if (entity1Value === 'paper') {
 				if (entity2Value === 'rock') {
 					entity2.value = 'paper';
+					entity2.lives--;
 				} else if (entity2Value === 'scissors') {
 					entity1.value = 'scissors';
+					entity1.lives--;
 				}
 			} else if (entity1Value === 'scissors') {
 				if (entity2Value === 'rock') {
 					entity1.value = 'rock';
+					entity1.lives--;
 				} else if (entity2Value === 'paper') {
 					entity2.value = 'scissors';
+					entity2.lives--;
 				}
 			}
 		}
 
 		checkEntityCollisions(entity: Entity) {
 			const radius = this.config.radius;
-			for (const other of this.getNeighbors(entity)) {
-				const distance = Vector.dist(entity.position, other.position);
-				if (distance < radius * 2) {
-					const collisionNormal = Vector.normalize(Vector.sub(other.position, entity.position));
-					const dotProduct = Vector.dot(entity.velocity, collisionNormal);
+			for (const zone of this.getNeighbors(entity.zone.x, entity.zone.y)) {
+				for (const other of zone) {
+					if (other.id === entity.id) continue;
+					if (other.lives <= 0) continue;
+					const distance = Vector.dist(entity.position, other.position);
+					if (distance < radius * 2) {
+						const collisionNormal = Vector.normalize(Vector.sub(other.position, entity.position));
+						const dotProduct = Vector.dot(entity.velocity, collisionNormal);
 
-					if (dotProduct < 0) continue;
+						if (dotProduct < 0) continue;
 
-					const reflection = Vector.mult(collisionNormal, 2 * dotProduct);
+						const reflection = Vector.mult(collisionNormal, 2 * dotProduct);
 
-					entity.velocity = Vector.sub(entity.velocity, reflection);
-					other.velocity = Vector.add(other.velocity, reflection);
+						entity.velocity = Vector.sub(entity.velocity, reflection);
+						other.velocity = Vector.add(other.velocity, reflection);
 
-					entity.velocity = Vector.normalize(entity.velocity);
-					other.velocity = Vector.normalize(other.velocity);
+						entity.velocity = Vector.normalize(entity.velocity);
+						other.velocity = Vector.normalize(other.velocity);
 
-					this.switchValue(entity, other);
+						this.switchValue(entity, other);
+					}
 				}
 			}
 		}
@@ -245,6 +364,12 @@
 			this.checkWallCollision(entity);
 			this.checkEntityCollisions(entity);
 			this.setZone(entity);
+
+			const target = this.findNearestTarget(entity);
+			if (!target) return;
+
+			const direction = Vector.sub(target.position, entity.position);
+			entity.velocity = Vector.normalize(direction);
 		}
 
 		handleEntities() {
@@ -311,7 +436,8 @@
 					radius * 2,
 					radius * 2
 				);
-				// this.ctx.strokeStyle = this.getZoneColor(entity.zoneX, entity.zoneY);
+
+				// this.ctx.strokeStyle = this.getZoneColor(entity.zone.x, entity.zone.y);
 				// this.ctx.strokeRect(
 				// 	entity.position.x - radius,
 				// 	entity.position.y - radius,
@@ -320,19 +446,30 @@
 				// );
 			}
 
+			for (const entity of this.entities) {
+				if (entity.lives <= 0) {
+					this.entities.delete(entity);
+				}
+			}
+
+			this.rocks = [...this.entities].filter((entity) => entity.value === 'rock');
+			this.papers = [...this.entities].filter((entity) => entity.value === 'paper');
+			this.scissors = [...this.entities].filter((entity) => entity.value === 'scissors');
+
 			// this.drawGrid();
 
 			requestAnimationFrame(() => this.run());
 		}
 	}
 
+	let game: Game;
 	onMount(() => {
 		const ctx = canvas.getContext('2d');
 		if (!ctx) {
 			console.error('Could not get canvas context');
 			return;
 		}
-		const game = new Game(ctx);
+		game = new Game(ctx);
 		console.log(game);
 		requestAnimationFrame(() => game.run());
 	});
@@ -340,4 +477,8 @@
 
 <div class="relative p-4 w-full h-full bg-surface-800 flex items-center justify-center">
 	<canvas class="w-full h-full" bind:this={canvas} />
+	<button
+		on:click={() => console.log(game.entities)}
+		class="btn absolute top-0 right-0 variant-soft-primary">Entities</button
+	>
 </div>

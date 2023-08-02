@@ -13,8 +13,8 @@ export type Entity = {
     velocity: Vector2D;
     speed: number;
     value: ItemType;
-    zoneX: number;
-    zoneY: number;
+    zone: Vector2D;
+    lives: number;
 }
 
 export type Grid = {
