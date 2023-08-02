@@ -111,8 +111,8 @@
 			this.grid = {};
 			this.entities = new Set();
 			this.config = {
-				items: 700,
-				radius: 15,
+				items: 1500,
+				radius: 8,
 				state: 'running'
 			};
 			this.currentTargets = {};
@@ -520,9 +520,9 @@
 		// Adjust the scale based on the scroll direction
 		const delta = e.deltaY;
 		if (delta < 0) {
-			scale += 0.25;
+			scale += 0.25 * scale * 0.75;
 		} else if (scale > 1) {
-			scale -= 0.25;
+			scale -= 0.25 * scale * 0.75;
 		} else {
 			return;
 		}
