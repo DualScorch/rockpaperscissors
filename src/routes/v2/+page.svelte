@@ -1,19 +1,25 @@
 <script lang="ts">
 	import { randomId } from '$lib/helpers';
-	import type {
-		Entity,
-		EntityType,
-		GameConfig,
-		Grid,
-		GridCell,
-		ItemType,
-		Vector2D
-	} from '$lib/types';
+	import type { Entity, EntityType, GameConfig, Grid, ItemType } from '$lib/types';
 	import { Vector } from '$lib/vector';
 	import { onDestroy, onMount } from 'svelte';
+	import { cubicOut } from 'svelte/easing';
+	import { space } from 'svelte/internal';
+	import { fade } from 'svelte/transition';
 
 	let canvas: HTMLCanvasElement;
 	let loaded = false;
+
+	let redrawGUI = false;
+
+	const FPS = 60;
+	let frametime = 1000 / FPS;
+	$: frametime = 1000 / FPS;
+
+	let then = Date.now();
+
+	let countdown = 0;
+	let countdownInterval: number;
 
 	const getRandomType = (): ItemType => {
 		const rnd = Math.random();
@@ -50,20 +56,21 @@
 		}
 	};
 
-	// const getGridCells = (entity: Entity): { x: number; y: number } => {
-	// 	const cells = entity.gridKey.split('-').map((v) => parseInt(v, 10));
-	// 	return { x: cells[0], y: cells[1] };
-	// };
-
 	let scissors: HTMLImageElement;
+	let scissorsHd: HTMLImageElement;
+
 	let paper: HTMLImageElement;
+	let paperHd: HTMLImageElement;
+
 	let rock: HTMLImageElement;
+	let rockHd: HTMLImageElement;
 
 	let destroy = false;
 
 	onDestroy(() => {
 		destroy = true;
 	});
+	const imageMap: Map<ItemType, HTMLImageElement> = new Map();
 
 	let imagesLoaded = 0;
 	const loadImages = () => {
@@ -73,9 +80,23 @@
 			imagesLoaded++;
 		});
 
+		scissorsHd = new Image();
+		scissorsHd.src = '/scissors_hd.png';
+		scissorsHd.addEventListener('load', () => {
+			imageMap.set('scissors', scissorsHd);
+			imagesLoaded++;
+		});
+
 		paper = new Image();
 		paper.src = '/paper.png';
 		paper.addEventListener('load', () => {
+			imagesLoaded++;
+		});
+
+		paperHd = new Image();
+		paperHd.src = '/paper_hd.png';
+		paperHd.addEventListener('load', () => {
+			imageMap.set('paper', paperHd);
 			imagesLoaded++;
 		});
 
@@ -84,9 +105,16 @@
 		rock.addEventListener('load', () => {
 			imagesLoaded++;
 		});
+
+		rockHd = new Image();
+		rockHd.src = '/rock_hd.png';
+		rockHd.addEventListener('load', () => {
+			imageMap.set('rock', rockHd);
+			imagesLoaded++;
+		});
 	};
 
-	$: loaded = imagesLoaded === 3;
+	$: loaded = imagesLoaded === 6;
 
 	let scale = 1;
 	let translateX = 0;
@@ -94,6 +122,8 @@
 
 	let gameSpeed = 1;
 	$: gameSpeed = 1 / scale;
+
+	let lastFrametime = 0;
 	class Game {
 		ctx: CanvasRenderingContext2D;
 		grid: Grid;
@@ -108,35 +138,73 @@
 
 		constructor(ctx: CanvasRenderingContext2D) {
 			this.ctx = ctx;
-			this.grid = {};
-			this.entities = new Set();
 			this.config = {
-				items: 1500,
-				radius: 8,
+				items: 5000,
+				radius: 6,
 				state: 'running'
 			};
-			this.currentTargets = {};
+			loadImages();
 			this.setCanvasSize();
+			// this.setProportionalRadius();
+
+			this.grid = {};
+			this.entities = new Set();
+			this.currentTargets = {};
 			this.rocks = [];
 			this.papers = [];
 			this.scissors = [];
 
 			for (let i = 0; i < this.config.items; i++) {
-				const entity = this.createRandomEntity();
-				this.entities.add(entity);
-				this.setZone(entity);
-				this.currentTargets[entity.id] = null;
-
-				if (entity.value === 'rock') {
-					this.rocks.push(entity);
-				} else if (entity.value === 'paper') {
-					this.papers.push(entity);
-				} else if (entity.value === 'scissors') {
-					this.scissors.push(entity);
-				}
+				this.addEntity();
 			}
+		}
 
-			loadImages();
+		restartCountdown() {
+			if (countdownInterval) return;
+			countdown = 5;
+			countdownInterval = setInterval(() => {
+				countdown = countdown - 0.1;
+				if (countdown <= 0) {
+					this.restart();
+					clearInterval(countdownInterval);
+					countdownInterval = 0;
+				}
+			}, 100);
+		}
+
+		restart() {
+			this.grid = {};
+			this.entities = new Set();
+			this.currentTargets = {};
+			this.rocks = [];
+			this.papers = [];
+			this.scissors = [];
+
+			for (let i = 0; i < this.config.items; i++) {
+				this.addEntity();
+			}
+		}
+
+		addEntity() {
+			const entity = this.createRandomEntity();
+			this.entities.add(entity);
+			this.setZone(entity);
+			this.currentTargets[entity.id] = null;
+
+			if (entity.value === 'rock') {
+				this.rocks.push(entity);
+			} else if (entity.value === 'paper') {
+				this.papers.push(entity);
+			} else if (entity.value === 'scissors') {
+				this.scissors.push(entity);
+			}
+		}
+
+		removeEntity(entity: Entity) {
+			if (!this.entities.has(entity)) return;
+
+			this.entities.delete(entity);
+			entity.lives = 0;
 		}
 
 		createRandomEntity = (): Entity => {
@@ -168,7 +236,8 @@
 			if (
 				currentTarget !== null &&
 				currentTarget?.value === targetType &&
-				currentTarget.lives > 0
+				currentTarget.lives > 0 &&
+				Vector.dist(entity.position, currentTarget.position) < 150
 			) {
 				return currentTarget;
 			}
@@ -184,7 +253,7 @@
 						closestDistance = distance;
 						closestEntity = e;
 
-						if (distance < 300) {
+						if (distance < 150) {
 							break;
 						}
 					}
@@ -197,55 +266,10 @@
 			}
 
 			return null;
-
-			// const toCheck: Vector2D[] = [entity.zone];
-			// const checked: Set<string> = new Set();
-
-			// const maxX = Math.floor((canvas.width / this.config.radius) * 2);
-			// const maxY = Math.floor((canvas.height / this.config.radius) * 2);
-
-			// while (toCheck.length > 0) {
-			// 	const current = toCheck.pop();
-			// 	if (current === undefined) continue;
-			// 	checked.add(Vector.toString(current));
-
-			// 	if (current.x < 0 || current.y < 0) continue;
-			// 	if (current.x >= maxX || current.y >= maxY) continue;
-
-			// 	const entities = this.getZoneEntities(current.x, current.y);
-			// 	for (const e of entities) {
-			// 		if (e.value === targetType) {
-			// 			this.currentTargets[entity.id] = e;
-			// 			return e;
-			// 		}
-			// 	}
-
-			// 	const x1y = { x: current.x - 1, y: current.y };
-			// 	if (!checked.has(Vector.toString(x1y))) {
-			// 		toCheck.push(x1y);
-			// 	}
-			// 	const x2y = { x: current.x + 1, y: current.y };
-			// 	if (!checked.has(Vector.toString(x2y))) {
-			// 		toCheck.push(x2y);
-			// 	}
-			// 	const xy1 = { x: current.x, y: current.y - 1 };
-			// 	if (!checked.has(Vector.toString(xy1))) {
-			// 		toCheck.push(xy1);
-			// 	}
-			// 	const xy2 = { x: current.x, y: current.y + 1 };
-			// 	if (!checked.has(Vector.toString(xy2))) {
-			// 		toCheck.push(xy2);
-			// 	}
-			// }
-
-			// return null;
 		};
 
 		getZoneEntities(zoneX: number, zoneY: number): Set<Entity> {
-			if (this.grid[zoneY] && this.grid[zoneY][zoneX]) {
-				return this.grid[zoneY][zoneX];
-			}
-			return new Set();
+			return this.grid?.[zoneY]?.[zoneX] ?? new Set();
 		}
 
 		getNeighbors(zoneX: number, zoneY: number): Set<Entity>[] {
@@ -351,16 +375,21 @@
 
 						const reflection = Vector.mult(collisionNormal, 2 * dotProduct);
 
-						entity.velocity = Vector.sub(entity.velocity, reflection);
-						other.velocity = Vector.add(other.velocity, reflection);
-
-						entity.velocity = Vector.normalize(entity.velocity);
-						other.velocity = Vector.normalize(other.velocity);
+						entity.velocity = Vector.normalize(Vector.sub(entity.velocity, reflection));
+						other.velocity = Vector.normalize(Vector.add(other.velocity, reflection));
 
 						this.switchValue(entity, other);
 					}
 				}
 			}
+		}
+
+		setHomingTarget(entity: Entity) {
+			const target = this.findNearestTarget(entity);
+			if (!target) return;
+
+			const direction = Vector.sub(target.position, entity.position);
+			entity.velocity = Vector.normalize(direction);
 		}
 
 		handleEntity(entity: Entity) {
@@ -370,12 +399,7 @@
 			this.checkWallCollision(entity);
 			this.checkEntityCollisions(entity);
 			this.setZone(entity);
-
-			const target = this.findNearestTarget(entity);
-			if (!target) return;
-
-			const direction = Vector.sub(target.position, entity.position);
-			entity.velocity = Vector.normalize(direction);
+			this.setHomingTarget(entity);
 		}
 
 		handleEntities() {
@@ -386,6 +410,11 @@
 
 		skip() {
 			requestAnimationFrame(() => this.run());
+		}
+
+		setProportionalRadius() {
+			const { width, height } = this.ctx.canvas;
+			this.config.radius = Math.floor(Math.min(width, height) / 200);
 		}
 
 		setCanvasSize() {
@@ -415,6 +444,30 @@
 			}
 		}
 
+		toggleGameState() {
+			if (this.config.state === 'running') {
+				this.config.state = 'paused';
+			} else {
+				this.config.state = 'running';
+			}
+		}
+
+		setEntityCount(count: number) {
+			const diff = count - this.entities.size;
+			if (this.entities.size - diff < 0 && diff < 0) return;
+			if (diff > 0) {
+				for (let i = 0; i < diff; i++) {
+					this.addEntity();
+				}
+			} else {
+				if (countdownInterval) return;
+				const iterator = this.entities.values();
+				for (let i = 0; i < Math.abs(diff); i++) {
+					this.removeEntity(iterator.next().value);
+				}
+			}
+		}
+
 		run() {
 			if (Math.random() < 0.001) {
 				console.log(this.grid);
@@ -426,6 +479,7 @@
 			}
 
 			if (destroy) {
+				destroy = false;
 				return;
 			}
 
@@ -433,16 +487,36 @@
 			this.ctx.scale(scale, scale);
 			this.ctx.translate(translateX, translateY);
 
-			this.handleEntities();
+			this.ctx.strokeStyle = '#0fba81';
+			this.ctx.lineWidth = 4;
+			this.ctx.globalAlpha = 0.5;
+			this.ctx.roundRect(4, 4, this.ctx.canvas.width - 8, this.ctx.canvas.height - 8, 4);
+			this.ctx.stroke();
+
+			this.ctx.globalAlpha = 1;
+
+			const now = Date.now();
+			if (now - then > frametime && this.config.state === 'running') {
+				lastFrametime = now - then;
+				then = now;
+				this.handleEntities();
+			}
+
+			for (const entity of this.entities) {
+				if (entity.lives <= 0) {
+					this.entities.delete(entity);
+				}
+			}
+
 			const radius = this.config.radius;
-			this.ctx.font = `${radius * 2}px serif`;
+			const doubleRadius = radius * 2;
 			for (const entity of this.entities) {
 				this.ctx.drawImage(
-					entity.value === 'rock' ? rock : entity.value === 'paper' ? paper : scissors,
+					imageMap.get(entity.value)!,
 					entity.position.x - radius,
 					entity.position.y - radius,
-					radius * 2,
-					radius * 2
+					doubleRadius,
+					doubleRadius
 				);
 
 				// this.ctx.strokeStyle = this.getZoneColor(entity.zone.x, entity.zone.y);
@@ -454,50 +528,34 @@
 				// );
 			}
 
-			for (const entity of this.entities) {
-				if (entity.lives <= 0) {
-					this.entities.delete(entity);
-				}
-			}
-
-			this.ctx.scale(2, 2);
-
 			this.rocks = [...this.entities].filter((entity) => entity.value === 'rock');
 			this.papers = [...this.entities].filter((entity) => entity.value === 'paper');
 			this.scissors = [...this.entities].filter((entity) => entity.value === 'scissors');
 
+			const rocksLength = this.rocks.length;
+			const papersLength = this.papers.length;
+			const scissorsLength = this.scissors.length;
+
+			if (
+				rocksLength + papersLength === 0 ||
+				rocksLength + scissorsLength === 0 ||
+				papersLength + scissorsLength === 0
+			) {
+				this.restartCountdown();
+			}
+
 			// this.drawGrid();
+			redrawGUI = !redrawGUI;
 
 			requestAnimationFrame(() => this.run());
 		}
 	}
 
-	// function handleZoom(event: MouseEvent) {
-	//         event.preventDefault();
-	//         var x = event.clientX - canvas.offsetLeft;
-	//         var y = event.clientY - canvas.offsetTop;
-	//         var scroll = event.deltaY < 0 ? 1 : -2;
-
-	//         var zoom = Math.exp(scroll * zoomIntensity);
-
-	//         context.translate(orgnx, orgny);
-
-	//         orgnx -= x / (scale * zoom) - x / scale;
-	//         orgny -= y / (scale * zoom) - y / scale;
-
-	//         context.scale(zoom, zoom);
-	//         context.translate(-orgnx, -orgny);
-
-	//         // Updating scale and visisble width and height
-	//         scale *= zoom;
-	//         visibleWidth = width / scale;
-	//         visibleHeight = height / scale;
-	//     }
-
 	let isMouseDown = false;
 	let game: Game;
 	onMount(() => {
 		const ctx = canvas.getContext('2d');
+
 		if (!ctx) {
 			console.error('Could not get canvas context');
 			return;
@@ -527,6 +585,15 @@
 			return;
 		}
 
+		if (scale > 16) {
+			scale = 16;
+			return;
+		}
+
+		if (scale < 1) {
+			scale = 1;
+			return;
+		}
 		// Adjust translateX and translateY to keep the mouse position stable during zoom
 		translateX -= mouseX * (1 / prevScale - 1 / scale);
 		translateY -= mouseY * (1 / prevScale - 1 / scale);
@@ -538,22 +605,109 @@
 			x: e.movementX,
 			y: e.movementY
 		};
+
 		translateX += delta.x * (1 / scale);
 		translateY += delta.y * (1 / scale);
 	};
 </script>
 
-<div class="relative p-4 w-full h-full bg-surface-800 flex items-center justify-center">
+<!-- <svelte:window
+	on:resize={() => {
+		if (game) game.setCanvasSize();
+	}}
+/> -->
+
+<div class="relative p-4 w-full h-full flex items-center justify-center select-none">
+	{#if game}
+		{#key redrawGUI}
+			<div
+				class="flex justify-between w-full px-8 sm:w-1/3 absolute bottom-8 sm:bottom-auto sm:top-8 left-1/2 -translate-x-1/2 h2"
+			>
+				<span
+					class="py-2 px-4 variant-glass-primary flex items-center rounded-md sm:w-40 w-24 justify-between"
+				>
+					<img src="/scissors.svg" class="w-8 sm:w-12" alt="Scissors" />
+					{game.scissors.length}
+				</span>
+				<span
+					class="py-2 px-4 variant-glass-primary flex items-center rounded-md sm:w-40 w-24 justify-between"
+				>
+					<img src="/rock.svg" class="w-8 sm:w-12" alt="Rock" />
+					{game.rocks.length}
+				</span>
+				<span
+					class="py-2 px-4 variant-glass-primary flex items-center rounded-md sm:w-40 w-24 justify-between"
+				>
+					<img src="/paper.svg" class="w-8 sm:w-12" alt="Paper" />
+					{game.papers.length}
+				</span>
+			</div>
+		{/key}
+		<span
+			class="absolute top-8 left-8 !h2 variant-glass-tertiary w-20 text-center px-4 py-2 rounded-md"
+		>
+			{lastFrametime}
+		</span>
+
+		<div class="flex gap-4 flex-col absolute top-8 right-8">
+			<button
+				on:click={() => game.toggleGameState()}
+				class="btn !h2 variant-glass-primary rounded-md"
+			>
+				{#if game.config.state === 'running'}
+					<img src="/pause.svg" class="h-8 sm:h-10" alt="Pause" />
+				{:else}
+					<img src="/play.svg" class="h-8 sm:h-10" alt="Play" />
+				{/if}
+			</button>
+			<button on:click={() => game.restart()} class="btn !h2 variant-glass-primary rounded-md">
+				<img src="/restart.svg" class="h-8 sm:h-10" alt="Restart" />
+			</button>
+
+			<button
+				on:click={() => game.setEntityCount(game.entities.size + 100)}
+				class="btn variant-glass-primary rounded-md !h3"
+			>
+				+100
+			</button>
+			<button
+				on:click={() => game.setEntityCount(game.entities.size - 100)}
+				class="btn variant-glass-primary rounded-md !h3"
+			>
+				-100
+			</button>
+		</div>
+		{#if countdown > 0}
+			<div
+				out:fade={{ duration: 150, easing: cubicOut }}
+				class="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 !h1 variant-glass-surface rounded-md px-4 py-2"
+			>
+				{#key countdown}
+					{countdown.toFixed(1)}
+				{/key}
+			</div>
+		{/if}
+	{/if}
 	<canvas
 		on:mousewheel={(e) => handleScale(e)}
-		on:mousedown={() => (isMouseDown = true)}
-		on:mouseup={() => (isMouseDown = false)}
+		on:mousedown={(e) => {
+			if (e.button !== 0) return;
+			isMouseDown = true;
+		}}
+		on:mouseup={(e) => {
+			if (e.button !== 0) return;
+			isMouseDown = false;
+		}}
 		on:mousemove={(e) => handleMove(e)}
 		class="w-full h-full"
 		bind:this={canvas}
 	/>
-	<button
-		on:click={() => console.log(game.entities)}
-		class="btn absolute top-0 right-0 variant-soft-primary">Entities</button
-	>
 </div>
+
+<!-- 
+<button
+	class="button absolute top-4 right-4 h2 py-2 px-4 variant-glass-primary rounded-md rounded-md"
+	on:click={() => (restartGame = !restartGame)}
+>
+	🔄
+</button> -->

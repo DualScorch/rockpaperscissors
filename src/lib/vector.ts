@@ -43,6 +43,10 @@ export class Vector {
         }
     }
 
+    static angle(v: Vector2D): number {
+        return Math.atan2(v.y, v.x);
+    }
+
     static magnitude(v: Vector2D): number {
         return Math.sqrt(v.x * v.x + v.y * v.y);
     }
