@@ -51,9 +51,16 @@ export class Vector {
         return Math.sqrt(v.x * v.x + v.y * v.y);
     }
 
+    static magnitudeSquared(v: Vector2D): number {
+        return v.x * v.x + v.y * v.y;
+    }
+
     static normalize(v: Vector2D): Vector2D {
-        const magnitude = Vector.magnitude(v);
-        return Vector.div(v, { x: magnitude, y: magnitude });
+        const invMagnitudeSq = 1 / Math.sqrt(v.x * v.x + v.y * v.y);
+        return {
+            x: v.x * invMagnitudeSq,
+            y: v.y * invMagnitudeSq
+        };
     }
 
     static dist(v1: Vector2D, v2: Vector2D): number {
@@ -78,5 +85,12 @@ export class Vector {
 
     static toString(v: Vector2D): string {
         return `${v.x},${v.y}`;
+    }
+
+    static square(v: Vector2D): Vector2D {
+        return {
+            x: v.x * v.x,
+            y: v.y * v.y
+        }
     }
 }

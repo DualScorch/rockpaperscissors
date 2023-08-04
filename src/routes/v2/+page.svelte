@@ -12,7 +12,7 @@
 
 	let redrawGUI = false;
 
-	const FPS = 60;
+	const FPS = 165;
 	let frametime = 1000 / FPS;
 	$: frametime = 1000 / FPS;
 
@@ -126,42 +126,34 @@
 	let lastFrametime = 0;
 	class Game {
 		ctx: CanvasRenderingContext2D;
-		grid: Grid;
-		entities: Set<Entity>;
+		grid: Grid = {};
+		entities: Set<Entity> = new Set();
 		config: GameConfig;
 		currentTargets: {
 			[key: string]: Entity | null;
-		};
-		rocks: Entity[];
-		papers: Entity[];
-		scissors: Entity[];
+		} = {};
+		rocks: Entity[] = [];
+		papers: Entity[] = [];
+		scissors: Entity[] = [];
+		rockSpeed: number = 1;
+		paperSpeed: number = 1;
+		scissorsSpeed: number = 1;
 
 		constructor(ctx: CanvasRenderingContext2D) {
 			this.ctx = ctx;
 			this.config = {
-				items: 5000,
-				radius: 6,
+				items: 300,
+				radius: 15,
 				state: 'running'
 			};
 			loadImages();
 			this.setCanvasSize();
-			// this.setProportionalRadius();
-
-			this.grid = {};
-			this.entities = new Set();
-			this.currentTargets = {};
-			this.rocks = [];
-			this.papers = [];
-			this.scissors = [];
-
-			for (let i = 0; i < this.config.items; i++) {
-				this.addEntity();
-			}
+			this.restart();
 		}
 
 		restartCountdown() {
 			if (countdownInterval) return;
-			countdown = 5;
+			countdown = 3;
 			countdownInterval = setInterval(() => {
 				countdown = countdown - 0.1;
 				if (countdown <= 0) {
@@ -170,6 +162,15 @@
 					countdownInterval = 0;
 				}
 			}, 100);
+		}
+
+		getEntitySpeed(entity: Entity) {
+			if (entity.value === 'rock') {
+				return this.rockSpeed;
+			} else if (entity.value === 'paper') {
+				return this.paperSpeed;
+			}
+			return this.scissorsSpeed;
 		}
 
 		restart() {
@@ -215,13 +216,13 @@
 					y: Math.random() * canvas.height
 				},
 				velocity: Vector.random(),
-				speed: Math.random() * 0.5 + 0.5,
+				speed: Math.random() * 1 + 1.5,
 				value: getRandomType(),
 				zone: {
 					x: 0,
 					y: 0
 				},
-				lives: 20
+				lives: 15
 			};
 		};
 
@@ -361,14 +362,18 @@
 		}
 
 		checkEntityCollisions(entity: Entity) {
-			const radius = this.config.radius;
+			const diameter = this.config.radius * 2;
+			const diameterSquared = diameter * diameter;
+
 			for (const zone of this.getNeighbors(entity.zone.x, entity.zone.y)) {
 				for (const other of zone) {
-					if (other.id === entity.id) continue;
-					if (other.lives <= 0) continue;
-					const distance = Vector.dist(entity.position, other.position);
-					if (distance < radius * 2) {
-						const collisionNormal = Vector.normalize(Vector.sub(other.position, entity.position));
+					if (other.id === entity.id || other.lives <= 0) continue;
+
+					const distanceSquared = Vector.magnitudeSquared(
+						Vector.sub(entity.position, other.position)
+					);
+					if (distanceSquared < diameterSquared) {
+						const collisionNormal = Vector.sub(other.position, entity.position);
 						const dotProduct = Vector.dot(entity.velocity, collisionNormal);
 
 						if (dotProduct < 0) continue;
@@ -387,14 +392,14 @@
 		setHomingTarget(entity: Entity) {
 			const target = this.findNearestTarget(entity);
 			if (!target) return;
-
-			const direction = Vector.sub(target.position, entity.position);
-			entity.velocity = Vector.normalize(direction);
+			entity.velocity = Vector.normalize(Vector.sub(target.position, entity.position));
 		}
 
 		handleEntity(entity: Entity) {
-			entity.position.x += entity.velocity.x * entity.speed * gameSpeed;
-			entity.position.y += entity.velocity.y * entity.speed * gameSpeed;
+			entity.position = Vector.add(
+				entity.position,
+				Vector.mult(entity.velocity, entity.speed * gameSpeed * this.getEntitySpeed(entity))
+			);
 
 			this.checkWallCollision(entity);
 			this.checkEntityCollisions(entity);
@@ -536,6 +541,24 @@
 			const papersLength = this.papers.length;
 			const scissorsLength = this.scissors.length;
 
+			if (rocksLength === 0) {
+				this.scissorsSpeed = 2;
+			} else {
+				this.scissorsSpeed = 1;
+			}
+
+			if (papersLength === 0) {
+				this.rockSpeed = 2;
+			} else {
+				this.rockSpeed = 1;
+			}
+
+			if (scissorsLength === 0) {
+				this.paperSpeed = 2;
+			} else {
+				this.paperSpeed = 1;
+			}
+
 			if (
 				rocksLength + papersLength === 0 ||
 				rocksLength + scissorsLength === 0 ||
@@ -617,7 +640,19 @@
 	}}
 /> -->
 
-<div class="relative p-4 w-full h-full flex items-center justify-center select-none">
+<div
+	on:mousewheel={(e) => handleScale(e)}
+	on:mousedown={(e) => {
+		if (e.button !== 0) return;
+		isMouseDown = true;
+	}}
+	on:mouseup={(e) => {
+		if (e.button !== 0) return;
+		isMouseDown = false;
+	}}
+	on:mousemove={(e) => handleMove(e)}
+	class="relative p-4 w-full h-full flex items-center justify-center select-none"
+>
 	{#if game}
 		{#key redrawGUI}
 			<div
@@ -688,20 +723,7 @@
 			</div>
 		{/if}
 	{/if}
-	<canvas
-		on:mousewheel={(e) => handleScale(e)}
-		on:mousedown={(e) => {
-			if (e.button !== 0) return;
-			isMouseDown = true;
-		}}
-		on:mouseup={(e) => {
-			if (e.button !== 0) return;
-			isMouseDown = false;
-		}}
-		on:mousemove={(e) => handleMove(e)}
-		class="w-full h-full"
-		bind:this={canvas}
-	/>
+	<canvas class="w-full h-full" bind:this={canvas} />
 </div>
 
 <!-- 
